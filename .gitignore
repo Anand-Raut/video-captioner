@@ -10,5 +10,4 @@ __pycache__/
 .env
 uploads/
 outputs/
-outputs/*.txt
 temp.py

@@ -10,7 +10,6 @@ from transcribe import transcriber
 
 app = FastAPI()
 
-# Allow frontend origin
 origins = ["http://localhost:5173"]
 
 app.add_middleware(
@@ -26,16 +25,12 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @app.post("/transcribe/")
 async def upload_video(file: UploadFile = File(...)):
-    # Create unique filename
     unique_id = str(uuid.uuid4())
     filename = f"{unique_id}_{file.filename}"
     file_path = os.path.join(UPLOAD_DIR, filename)
 
-    # Save uploaded video
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-
-    # Process the video
     try:
         result = transcriber(file_path)
     except Exception as e:

@@ -12,15 +12,15 @@ def transcriber(video_path: str) -> dict:
 
     os.makedirs("outputs", exist_ok=True)
 
-    # Step 1: Extract audio
+    #Extract the audio
     video = mp.VideoFileClip(video_path)
     video.audio.write_audiofile(audio_path)
 
-    # Step 2: Transcribe
+    # voice to text conversion
     model = whisper.load_model("tiny")
     result = model.transcribe(audio_path, verbose=True)
 
-    # Step 3: Write .srt
+    #Write .srt for subtitles
     def write_srt(transcription, filename="video.srt", max_gap=2.0, max_display_time=5.0):
         segments = transcription["segments"]
         with open(filename, "w", encoding="utf-8") as f:
@@ -53,11 +53,10 @@ def transcriber(video_path: str) -> dict:
 
     write_srt(result, srt_path)
 
-    # Save full transcript
     with open(transcript_path, "w", encoding="utf-8") as f:
         f.write(result["text"])
 
-    # Step 4: Burn subtitles
+    # Burn subtitles to the video
     subprocess.run([
         "ffmpeg",
         "-i", video_path,

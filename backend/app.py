@@ -1,31 +1,47 @@
-# app.py
-
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import JSONResponse
-import shutil
 import os
+import moviepy as mp
+import whisper
+import subprocess
 
-from transcribe import process_video_with_subs
+# Step 1: Extract audio
+video = mp.VideoFileClip("video.mp4")
+video.audio.write_audiofile("audio.wav")
 
-app = FastAPI()
+# Step 2: Transcribe using Whisper
+model = whisper.load_model("tiny")
+result = model.transcribe("audio.wav", verbose=True)
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Step 3: Write .srt subtitles
+def write_srt(transcription, filename="video.srt"):
+    with open(filename, "w", encoding="utf-8") as f:
+        for i, segment in enumerate(transcription["segments"]):
+            start = segment["start"]
+            end = segment["end"]
+            text = segment["text"].strip()
 
-@app.post("/transcribe/")
-async def upload_video(file: UploadFile = File(...)):
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
+            # Format time to SRT time
+            def format_time(seconds):
+                hrs = int(seconds // 3600)
+                mins = int((seconds % 3600) // 60)
+                secs = int(seconds % 60)
+                millis = int((seconds - int(seconds)) * 1000)
+                return f"{hrs:02}:{mins:02}:{secs:02},{millis:03}"
 
-    # Save uploaded file
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+            f.write(f"{i+1}\n")
+            f.write(f"{format_time(start)} --> {format_time(end)}\n")
+            f.write(f"{text}\n\n")
 
-    # Run transcription + subtitle pipeline
-    result = process_video_with_subs(file_path)
+write_srt(result)
 
-    return JSONResponse(content={
-        "transcript": result["transcript_text"],
-        "transcript_file": result["transcript_path"],
-        "subtitle_file": result["subtitle_file"],
-        "output_video": result["output_video"]
-    })
+# Step 4: Burn subtitles into the video using FFmpeg
+subprocess.run([
+    "ffmpeg",
+    "-i", "video.mp4",
+    "-vf", "subtitles=video.srt",
+    "-c:a", "copy",
+    "output_with_subs.mp4"
+])
+
+# Step 5: Clean up (optional)
+os.remove("audio.wav")
+print("✅ Done: Subtitles burned into 'output_with_subs.mp4'")

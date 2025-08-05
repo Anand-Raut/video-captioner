@@ -1,47 +1,35 @@
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import FileResponse, JSONResponse
 import os
-import moviepy as mp
-import whisper
-import subprocess
+import shutil
+from transcribe import transcriber
 
-# Step 1: Extract audio
-video = mp.VideoFileClip("video.mp4")
-video.audio.write_audiofile("audio.wav")
+app = FastAPI()
 
-# Step 2: Transcribe using Whisper
-model = whisper.load_model("tiny")
-result = model.transcribe("audio.wav", verbose=True)
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Step 3: Write .srt subtitles
-def write_srt(transcription, filename="video.srt"):
-    with open(filename, "w", encoding="utf-8") as f:
-        for i, segment in enumerate(transcription["segments"]):
-            start = segment["start"]
-            end = segment["end"]
-            text = segment["text"].strip()
+@app.post("/transcribe/")
+async def upload_video(file: UploadFile = File(...)):
+    file_path = os.path.join(UPLOAD_DIR, file.filename)
 
-            # Format time to SRT time
-            def format_time(seconds):
-                hrs = int(seconds // 3600)
-                mins = int((seconds % 3600) // 60)
-                secs = int(seconds % 60)
-                millis = int((seconds - int(seconds)) * 1000)
-                return f"{hrs:02}:{mins:02}:{secs:02},{millis:03}"
+    # Save uploaded video
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
-            f.write(f"{i+1}\n")
-            f.write(f"{format_time(start)} --> {format_time(end)}\n")
-            f.write(f"{text}\n\n")
+    # Process it
+    try:
+        result = transcriber(file_path)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
-write_srt(result)
+    return {
+        "transcript": result["transcript"],
+        "download_url": f"/download/video?path={result['output_video']}",
+    }
 
-# Step 4: Burn subtitles into the video using FFmpeg
-subprocess.run([
-    "ffmpeg",
-    "-i", "video.mp4",
-    "-vf", "subtitles=video.srt",
-    "-c:a", "copy",
-    "output_with_subs.mp4"
-])
-
-# Step 5: Clean up (optional)
-os.remove("audio.wav")
-print("✅ Done: Subtitles burned into 'output_with_subs.mp4'")
+@app.get("/download/video")
+def download_video(path: str):
+    if os.path.exists(path):
+        return FileResponse(path, media_type="video/mp4", filename=os.path.basename(path))
+    return JSONResponse(status_code=404, content={"error": "File not found"})
